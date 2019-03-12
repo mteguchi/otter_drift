@@ -1,0 +1,192 @@
+---
+title: "Otter Drift Experiment"
+author: "Tomo Eguchi"
+date: \today{}
+output: pdf_document
+fontsize: 12pt
+linestretch: 2
+header-includes:
+  - \usepackage{lineno}
+  - \linenumbers
+  - \setlength\parindent{24pt}
+---
+
+```{r global_options, include=FALSE}
+#date: '`r Sys.Date()`'  # works for word
+#date: \today{}   # works only for pdf output
+
+knitr::opts_chunk$set(fig.path='figures/', echo = FALSE, message = FALSE)
+```
+
+```{r getStarted, include = FALSE}
+library(nlme)
+library(gamm4)
+library(knitr)
+library(ggplot2)
+rm(list=ls())
+runDate <- Sys.Date()
+sysInfo <- Sys.info()
+ifelse(sysInfo[1] == 'Linux',
+       source('~/Documents/R/TomosFunctions.R'),
+       source('~/R/TomosFunctions.R'))
+
+datafile <- 'Data_06Aug2015.csv'
+
+# the following two are used to count figure and table #s 
+figCount <- c(`_` = 0)
+tableCount <- c(`_` = 0)
+
+```
+
+```{r manipulateData}
+dat <- read.table(file = datafile, sep=",", header = TRUE)
+#windDat <- read.table(file = windfile, sep = ",", header = TRUE)
+
+dat_M <- vector(mode = "numeric", length = dim(dat)[1])
+dat_Y <- vector(mode = "numeric", length = dim(dat)[1])
+for (k in 1:dim(dat)[1]){
+  dat_M[k] <- as.numeric(strsplit(as.character(dat$Date[k]), "/")[[1]][1])
+  dat_Y[k] <- as.numeric(strsplit(as.character(dat$Date[k]), "/")[[1]][3])
+}
+
+dat$dat_M <- dat_M
+dat$dat_Y <- dat_Y - min(dat_Y)
+
+dat3_mat <- dat[,c("DaysSinceRelease", "windSpd", 
+                   "windSpdSum", "dat_M")]
+dat3_mat_std <- scale(dat3_mat)
+dat3_df <- as.data.frame(cbind(dat3_mat_std, 
+                               windDir = dat$windDir/360, 
+                               windDirSum = dat$windDirSum/360,
+                               cosTheta = dat$cosTh,
+                               sinTheta = dat$sinTh,
+                               dat[, c("Type", "distInKm", "dat_Y", "ID")]))
+
+```
+
+#Methods
+Because wind may affect the drifting pattern of a carcass at sea, we obtained the direction and speed of wind from ... Daily averages of wind speed and direction were computed using circular statistics (Fisher 1993). Using these daily average values, cumulative wind direction and speed were computed using vector algebra for each released carcass or dummy. Wind directions then were decomposed into sine and cosine components, which were used in the following. 
+
+For each carcass or dummy, a total distance traveled was computed at every location fix. We first fitted linear models to the data to determine (1) whether drift distances were different between carcasses and dummies and (2) what variables affected the drift distance. Because of the repeated measurements of each target (carcass/dummy) over time, we used the mixed effects models. All predictor variables were centered and standardized. 
+
+We also fitted  generalized additive models with cubic regression spline as the basis function to the data to determine if non-linear models were more appropriate than linear models. All analyses were conducted using the R statistical environment (V. 3.2.1; R Core Team 2015) with packages nlme (Pinheiro et al. 2015) and gamm4 (Wood and Scheipl 2014). 
+
+```{r linearModels}
+model_lme <- vector(mode = "list", length = 5)
+model_lme[[1]] <- as.formula('distInKm ~ Type * DaysSinceRelease + windSpdSum + cosTheta + sinTheta')
+model_lme[[2]] <- as.formula('distInKm ~ Type * DaysSinceRelease + cosTheta + sinTheta')
+model_lme[[3]] <- as.formula('distInKm ~ Type + DaysSinceRelease + windSpdSum + cosTheta + sinTheta')
+model_lme[[4]] <- as.formula('distInKm ~ Type + DaysSinceRelease + cosTheta + sinTheta')
+model_lme[[5]] <- as.formula('distInKm ~ DaysSinceRelease + cosTheta + sinTheta')
+model_lme[[6]] <- as.formula('distInKm ~ windSpdSum + cosTheta + sinTheta')
+
+fit_lme <- lapply(model_lme, 
+                  function(x) lme(x,
+                                  random = ~ 1 + DaysSinceRelease|ID, 
+                                  data = dat3_df,
+                                  control = lmeControl(maxIter = 1000, 
+                                                       msMaxIter = 5000,
+                                                       niterEM = 5000),
+                                  method = "ML"))
+
+#summary(fit_lme3)
+varnames <- unlist(lapply(model_lme, 
+                          FUN = function(x) strsplit(as.character(x), split = '~')[3]))
+
+AIC_df <- data.frame(AIC = unlist(lapply(fit_lme, 
+                                         FUN = function(x) AIC(x))),
+                     model = varnames) 
+AIC_df$delta <- AIC_df$AIC - min(AIC_df$AIC)
+rownames(AIC_df) <- paste("Model", 1:length(model_lme)) 
+model.lkhd <- exp(-0.5 * AIC_df$delta)
+AIC_df$weight <- model.lkhd/(sum(model.lkhd))
+
+AIC.ordered <- AIC_df[order(AIC_df$delta), colnames(AIC_df) != "AIC"]
+tableCount <- incCount(tableCount, "table_AIC")
+text_table_AIC <- "A comparison of linear models fitted to drift data of sea otter carcasses and dummies. delta is difference in AIC values and Weight is Akaike weight (Burnham and Anderson 2010)."
+
+bestModel <- rownames(AIC.ordered)[1]
+bestModelNum <- as.numeric(unlist(strsplit(bestModel, split = "Model "))[2])
+best2ModelNum <- as.numeric(unlist(strsplit(rownames(AIC.ordered)[2], 
+                                            split = "Model "))[2])
+#AIC(fit_lme1, fit_lme2, fit_lme3)
+
+coefTable <- as.data.frame(summary(fit_lme[[bestModelNum]])$tTable)
+coefTable <- coefTable[, (colnames(coefTable) != "DF" &  
+                            colnames(coefTable) != "t-value")]
+
+tableCount <- incCount(tableCount, "table_coefBestModel")
+text_table_coefBestModel <- "Estiamted coefficients of the best model."
+```
+
+```{r gamModel, include=FALSE}
+fit1_gam <- gamm4(distInKm ~ s(DaysSinceRelease, bs = "cr", k = 5) + 
+                    s(cosTheta, bs = "cr", k = 5) + 
+                    s(sinTheta, bs = "cr", k = 5),
+                  random = ~(1 + DaysSinceRelease|ID),
+                  data = dat3_df,
+                  family = gaussian)
+
+fit2_gam <- gamm4(distInKm ~ s(DaysSinceRelease, bs = "cr", k = 7, by = Type) + 
+                    s(cosTheta, bs = "cr", k = 5, by = Type) + 
+                    s(sinTheta, bs = "cr", k = 5, by = Type),
+                  random = ~(1 + DaysSinceRelease|ID),
+                  data = dat3_df,
+                  family = gaussian)
+
+plot_gam <- plot(fit2_gam$gam)
+
+# make plots for all combos
+plotAll_GAM <- lapply(plot_gam, 
+                      FUN = function(y){
+                        df_gam <- data.frame(v1 = y$x,
+                                             smooth = y$fit,
+                                             SE = y$se)
+                        df_rug <- data.frame(v1 = y$raw)
+                        
+                        plot1_GAM <- ggplot() + 
+                          geom_ribbon(aes(x=v1, 
+                                          y=smooth, 
+                                          ymin = smooth-1.96*SE, 
+                                          ymax=smooth+1.96*SE), 
+                                      data = df_gam) + 
+                          geom_line(aes(x=v1,
+                                        y=smooth), 
+                                    data = df_gam, 
+                                    color = "white") + 
+                          xlab(y$xlab) + 
+                          ylab(y$ylab) + 
+                          theme(axis.text = element_text(size = 12)) + 
+                          geom_rug(data=df_rug, aes(x=v1)) + 
+                          theme_minimal()} )
+
+
+figCount <- incCount(figCount, "figure_plotGam")
+
+text_plotGam <- "The GAM smooth functions for days since release and cumulative sum of wind directions as predictors to distance traveled of sea otters.  Black ribbons indicate approximate 95% confidence intervals. Variables were centered and standardized prior to the anlaysis."
+
+```
+
+#Results
+Among the linear models, `r bestModel` had the smallest AIC value (Table `r labelNumber(tableCount, "table_AIC")`). Because the estimated coefficient for DaysSinceRelease from the second best model was virtually identical to that from the best model (Table `r labelNumber(tableCount, "table_coefBestModel")`; DaysSinceRelease: `r signif(summary(fit_lme[[bestModelNum]])$tTable["DaysSinceRelease", "Value"], digits = 4)` and `r signif(summary(fit_lme[[best2ModelNum]])$tTable["DaysSinceRelease", "Value"], digits = 4)`), we did not use the model averaging. 
+
+\noindent `r pasteLabel(preText = "Table", inObj = tableCount, objName = "table_AIC", postText = text_table_AIC)`
+`r kable(AIC.ordered, digits = 2)`
+
+Drifting distances were not statistically different between the carcasses and dummies (p-value for Type in Model `r best2ModelNum`: `r signif(summary(fit_lme[[best2ModelNum]])$tTable["Typedummy", "p-value"], digits = 4)`.  
+In other words, carcasses and dummies drifted similar distances. Drifting distances were positively affected with time. Cosine and sine functions of the cumulative wind directions were not statistically significant (Table `r labelNumber(tableCount, "table_coefBestModel")`).   
+
+\noindent `r pasteLabel(preText = "Table", inObj = tableCount, objName = "table_coefBestModel", postText = text_table_coefBestModel)`
+`r kable(coefTable, digits = 2)`
+
+To consider non-linear relationships between the predictors and distance moved, a generalized additive model also was fitted to the data. For this approach, `r bestModel` was fitted to carcasses and dummies, where cubic regression spline was used as the basis function. Relationshis could be approximated by linear functions because of wide uncertainty and small estimated degrees of freedom (< `r ceiling(max(summary(fit2_gam$gam)$s.table[,"edf"]))`; Figure `r labelNumber(figCount, "figure_plotGam")`). 
+
+
+```{r plotGamFunctions}
+multiplot(plotlist = plotAll_GAM, cols = 2)
+```
+
+\noindent `r pasteLabel(preText = "Figure", inObj = figCount, objName = "figure_plotGam", postText = text_plotGam)`
+
+
+

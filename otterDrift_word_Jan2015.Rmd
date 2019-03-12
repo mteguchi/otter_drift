@@ -1,0 +1,402 @@
+---
+title: "Otter Drift Experiment"
+author: "Tomo Eguchi"
+date: '`r Sys.Date()`'
+output: word_document
+fontsize: 12pt
+linestretch: 2
+header-includes:
+  - \usepackage{lineno}
+  - \linenumbers
+  - \setlength\parindent{24pt}
+---
+
+```{r global_options, include=FALSE}
+#date: '`r format(Sys.Date(), "%B %d, %Y")`'
+#date: '`r Sys.Date()`'  # works for word
+#date: \today{}   # works only for pdf output
+
+knitr::opts_chunk$set(fig.path='figures/', echo = FALSE, message = FALSE)
+```
+
+```{r getStarted, include = FALSE}
+library(nlme)
+library(gamm4)
+library(knitr)
+library(ggplot2)
+rm(list=ls())
+runDate <- Sys.Date()
+sysInfo <- Sys.info()
+ifelse(sysInfo[1] == 'Linux',
+       source('~/Documents/R/tools/TomosFunctions.R'),
+       source('~/R/tools/TomosFunctions.R'))
+
+datafile <- 'Data_11Aug2015b.csv'
+#datafile <- 'Data_06Aug2015.csv'
+
+# the following two are used to count figure and table #s 
+figCount <- c(`_` = 0)
+tableCount <- c(`_` = 0)
+
+```
+
+```{r manipulateData}
+dat <- na.omit(read.table(file = datafile, sep=",", header = TRUE))
+#windDat <- read.table(file = windfile, sep = ",", header = TRUE)
+
+month <- vector(mode = "numeric", length = dim(dat)[1])
+dat_Y <- vector(mode = "numeric", length = dim(dat)[1])
+for (k in 1:dim(dat)[1]){
+  month[k] <- as.numeric(strsplit(as.character(dat$Date[k]), "/")[[1]][1])
+  dat_Y[k] <- as.numeric(strsplit(as.character(dat$Date[k]), "/")[[1]][3])
+}
+
+dat$month <- month
+dat$dat_Y <- dat_Y - min(dat_Y)
+
+dat$fMonth <- as.factor(dat$month)
+
+dat3_mat <- dat[,c("windSpd", "windSpdSum")]
+#dat3_mat_std <- scale(dat3_mat)
+dat3_df <- as.data.frame(cbind(dat3_mat, 
+                               windDir = dat$windDir/360, 
+                               windDirSum = dat$windDirSum/360,
+                               cos = dat$cosTh,
+                               sin = dat$sinTh,
+                               dat[, c("DaysSinceRelease", "Type", 
+                                       "distInKm", "dat_Y", "ID", 
+                                       "ATOS", "fMonth")]))
+
+colnames(dat3_df) <- c("wind.spd", "wind.spd.sum",
+                       "wind.dir", "wind.dir.sum",
+                       "cos", "sin", "days", "type",
+                       "dist", "year", "ID", "ATOS", "month")
+```
+
+#Methods
+Because wind may affect the drifting pattern of a carcass at sea, we obtained the direction and speed of wind from ... Daily averages of wind speed and direction were computed using circular statistics (Fisher 1993). Using these daily average values, cumulative wind direction and speed were computed using vector algebra for each released carcass or dummy. Wind directions then were decomposed into sine and cosine components, which were used in the following. 
+
+For each carcass or dummy, a total distance traveled was computed at every location fix. We first fitted linear models to the data to determine (1) whether drift distances were different between carcasses and dummies and (2) what variables affected the drift distance. Because of the repeated measurements of each target (carcass/dummy) over time, we used the mixed effects models. 
+
+We also used ATOS as a response variable. 
+
+We also fitted  generalized additive models with a cubic regression spline as the basis function to the data to determine if non-linear models were more appropriate than linear models. All analyses were conducted using the R statistical environment (V. 3.2.1; R Core Team 2015) with packages nlme (Pinheiro et al. 2015) and gamm4 (Wood and Scheipl 2014). 
+
+```{r linearModels}
+model_lme <- vector(mode = "list", length = 7)
+model_lme[[1]] <- as.formula('dist ~ type * days + wind.spd.sum + cos + sin + month')
+model_lme[[2]] <- as.formula('dist ~ type * days + cos + sin + month')
+model_lme[[3]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month')
+model_lme[[4]] <- as.formula('dist ~ type + days + cos + sin + month')
+model_lme[[5]] <- as.formula('dist ~ days + cos + sin + month')
+model_lme[[6]] <- as.formula('dist ~ wind.spd.sum + cos + sin + month')
+model_lme[[7]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month')
+model_lme[[8]] <- as.formula('dist ~ type + days')
+model_lme[[9]] <- as.formula('dist ~ type + days + wind.spd.sum')
+model_lme[[10]] <- as.formula('dist ~ wind.spd.sum + days')
+model_lme[[11]] <- as.formula('dist ~ wind.spd.sum + days + month')
+
+fit_lme <- lapply(model_lme, 
+                  function(x) lme(x,
+                                  random = ~ 1 + days|ID, 
+                                  data = dat3_df,
+                                  control = lmeControl(maxIter = 1000, 
+                                                       msMaxIter = 5000,
+                                                       niterEM = 5000),
+                                  method = "ML"))
+
+#summary(fit_lme3)
+varnames <- unlist(lapply(model_lme, 
+                          FUN = function(x) strsplit(as.character(x), split = '~')[3]))
+
+AIC_df <- data.frame(AIC = unlist(lapply(fit_lme, 
+                                         FUN = function(x) AIC(x))),
+                     model = varnames) 
+AIC_df$delta <- AIC_df$AIC - min(AIC_df$AIC)
+rownames(AIC_df) <- paste("Model", 1:length(model_lme)) 
+model.lkhd <- exp(-0.5 * AIC_df$delta)
+#AIC_df$weight <- model.lkhd/(sum(model.lkhd))
+
+AIC.ordered <- AIC_df[order(AIC_df$delta), 
+                      colnames(AIC_df) != "AIC"]
+tableCount <- incCount(tableCount, "table_AIC")
+text_table_AIC <- "A comparison of linear models fitted to drift data of sea otter carcasses and dummies. delta is difference in AIC values and Weight is Akaike weight (Burnham and Anderson 2010)."
+
+bestModel <- rownames(AIC.ordered)[1]
+bestModelNum <- as.numeric(unlist(strsplit(bestModel, split = "Model "))[2])
+best2ModelNum <- as.numeric(unlist(strsplit(rownames(AIC.ordered)[2], 
+                                            split = "Model "))[2])
+
+best3ModelNum <- as.numeric(unlist(strsplit(rownames(AIC.ordered)[3], 
+                                            split = "Model "))[2])
+
+#AIC(fit_lme1, fit_lme2, fit_lme3)
+
+coefTable <- as.data.frame(summary(fit_lme[[bestModelNum]])$tTable)
+coefTable <- coefTable[, (colnames(coefTable) != "DF" &  
+                            colnames(coefTable) != "t-value")]
+
+tableCount <- incCount(tableCount, "table_coefBestModel")
+text_table_coefBestModel <- "Estiamted coefficients of the best model."
+```
+
+```{r gamModel, include=FALSE}
+fit1_gam <- gamm4(dist ~ s(days, bs = "cr", k = 5) + 
+                    s(wind.spd.sum, bs = "cr", k = 5) + 
+                    s(cos, bs = "cr", k = 5) + 
+                    s(sin, bs = "cr", k = 5) + 
+                    s(month),
+                  random = ~(1 + days|ID),
+                  data = dat3_df,
+                  family = gaussian)
+
+fit2_gam <- gamm4(dist ~ s(days, bs = "cr", k = 5) +
+                    s(wind.spd.sum, bs = "cr", k = 5) +
+                    s(month, bs = "cr", k = 5),
+                  random = ~(1 + days|ID),
+                  data = dat3_df,
+                  family = gaussian)
+
+plot_gam <- plot(fit2_gam$gam)
+
+# make plots for all combos
+plotAll_GAM <- lapply(plot_gam, 
+                      FUN = function(y){
+                        df_gam <- data.frame(v1 = y$x,
+                                             smooth = y$fit,
+                                             SE = y$se)
+                        df_rug <- data.frame(v1 = y$raw)
+                        
+                        plot1_GAM <- ggplot() + 
+                          geom_ribbon(aes(x=v1, 
+                                          y=smooth, 
+                                          ymin = smooth-1.96*SE, 
+                                          ymax=smooth+1.96*SE), 
+                                      data = df_gam) + 
+                          geom_line(aes(x=v1,
+                                        y=smooth), 
+                                    data = df_gam, 
+                                    color = "white") + 
+                          xlab(y$xlab) + 
+                          ylab(y$ylab) + 
+                          #ggtitle(y$ylab) + 
+                          theme(axis.text = element_text(size = 8)) + 
+                          geom_rug(data=df_rug, aes(x=v1)) + 
+                          theme_minimal()} )
+
+
+figCount <- incCount(figCount, "figure_plotGam")
+
+text_plotGam <- "The GAM smooth functions for days since release and cumulative sum of wind directions as predictors to distance traveled of sea otters.  Black ribbons indicate approximate 95% confidence intervals."
+
+```
+
+
+```{r ATOS_linearModels}
+model_lme_ATOS <- vector(mode = "list", length = 7)
+model_lme_ATOS[[1]] <- as.formula('ATOS ~ type * days + wind.spd.sum + cos + sin + month')
+model_lme_ATOS[[2]] <- as.formula('ATOS ~ type * days + cos + sin + month')
+model_lme_ATOS[[3]] <- as.formula('ATOS ~ type + days + wind.spd.sum + cos + sin + month')
+model_lme_ATOS[[4]] <- as.formula('ATOS ~ type + days + cos + sin + month')
+model_lme_ATOS[[5]] <- as.formula('ATOS ~ days + cos + sin + month')
+model_lme_ATOS[[6]] <- as.formula('ATOS ~ wind.spd.sum + cos + sin + month')
+model_lme_ATOS[[7]] <- as.formula('ATOS ~ days + wind.spd.sum + cos + sin + month')
+model_lme_ATOS[[8]] <- as.formula('ATOS ~ type + days')
+model_lme_ATOS[[9]] <- as.formula('ATOS ~ type + days + wind.spd.sum')
+model_lme_ATOS[[10]] <- as.formula('ATOS ~ wind.spd.sum + days')
+model_lme_ATOS[[11]] <- as.formula('ATOS ~ wind.spd.sum + days + month')
+
+fit_lme_ATOS <- lapply(model_lme_ATOS, 
+                       function(x) lme(x,
+                                       random = ~ 1 + days|ID, 
+                                       data = dat3_df,
+                                       control = lmeControl(maxIter = 10000, 
+                                                            msMaxIter = 10000,
+                                                            niterEM = 10000),
+                                       method = "ML"))
+
+#summary(fit_lme3)
+varnames_ATOS <- unlist(lapply(model_lme_ATOS, 
+                               FUN = function(x) strsplit(as.character(x), split = '~')[3]))
+
+AIC_df_ATOS <- data.frame(AIC = unlist(lapply(fit_lme_ATOS, 
+                                         FUN = function(x) AIC(x))),
+                     model = varnames_ATOS) 
+AIC_df_ATOS$delta <- AIC_df_ATOS$AIC - min(AIC_df_ATOS$AIC)
+rownames(AIC_df_ATOS) <- paste("Model", 1:length(model_lme_ATOS)) 
+model.lkhd_ATOS <- exp(-0.5 * AIC_df_ATOS$delta)
+AIC_df_ATOS$weight <- model.lkhd_ATOS/(sum(model.lkhd_ATOS))
+
+AIC.ordered_ATOS <- AIC_df_ATOS[order(AIC_df_ATOS$delta), colnames(AIC_df_ATOS) != "AIC"]
+tableCount <- incCount(tableCount, "table_AIC_ATOS")
+text_table_AIC_ATOS <- "A comparison of linear models fitted to drift data of sea otter carcasses and dummies. delta is difference in AIC values and Weight is Akaike weight (Burnham and Anderson 2010)."
+
+bestModel_ATOS <- rownames(AIC.ordered_ATOS)[1]
+bestModelNum_ATOS <- as.numeric(unlist(strsplit(bestModel_ATOS, split = "Model "))[2])
+best2ModelNum_ATOS <- as.numeric(unlist(strsplit(rownames(AIC.ordered_ATOS)[2], 
+                                            split = "Model "))[2])
+#AIC(fit_lme1, fit_lme2, fit_lme3)
+
+coefTable_ATOS <- as.data.frame(summary(fit_lme_ATOS[[bestModelNum_ATOS]])$tTable)
+coefTable_ATOS <- coefTable_ATOS[, (colnames(coefTable_ATOS) != "DF" &  
+                            colnames(coefTable_ATOS) != "t-value")]
+
+tableCount <- incCount(tableCount, "table_coefBestModel_ATOS")
+text_table_coefBestModel_ATOS <- "Estiamted coefficients of the best model."
+```
+
+```{r ATOS_gamModel, include=FALSE}
+fit1_gam_ATOS <- gamm4(ATOS ~ s(days, bs = "cr", k = 5) + 
+                         s(wind.spd.sum, bs = "cr", k = 5) + 
+                         s(cos, bs = "cr", k = 5) + 
+                         s(sin, bs = "cr", k = 5) + 
+                         s(month, bs = "cr", k = 5),
+                       random = ~(1 + days|ID),
+                       data = dat3_df,
+                       family = gaussian)
+
+fit2_gam_ATOS <- gamm4(ATOS ~ s(days, bs = "cr", k = 5) +
+                         s(wind.spd.sum, bs = "cr", k = 5),
+                       random = ~(1 + days|ID),
+                       data = dat3_df,
+                       family = gaussian)
+
+plot_gam_ATOS <- plot(fit2_gam_ATOS$gam)
+
+# make plots for all combos
+plotAll_GAM_ATOS <- lapply(plot_gam_ATOS, 
+                      FUN = function(y){
+                        df_gam <- data.frame(v1 = y$x,
+                                             smooth = y$fit,
+                                             SE = y$se)
+                        df_rug <- data.frame(v1 = y$raw)
+                        
+                        plot1_GAM <- ggplot() + 
+                          geom_ribbon(aes(x=v1, 
+                                          y=smooth, 
+                                          ymin = smooth-1.96*SE, 
+                                          ymax = smooth+1.96*SE), 
+                                      data = df_gam) + 
+                          geom_line(aes(x=v1,
+                                        y=smooth), 
+                                    data = df_gam, 
+                                    color = "white") + 
+                          xlab(y$xlab) + 
+                          ylab(y$ylab) + 
+                          #ggtitle(y$ylab) + 
+                          theme(axis.text = element_text(size = 8)) + 
+                          geom_rug(data=df_rug, aes(x=v1)) + 
+                          theme_minimal()} )
+
+
+figCount <- incCount(figCount, "figure_plotGam_ATOS")
+
+text_plotGam_ATOS <- "The GAM smooth functions for days since release and cumulative sum of wind directions as predictors to ATOS.  Black ribbons indicate approximate 95% confidence intervals. "
+```
+
+Because the estimated coefficient for days from the second best model was virtually identical to that from the best model (Table `r labelNumber(tableCount, "table_coefBestModel")`; days: `r signif(summary(fit_lme[[bestModelNum]])$tTable["days", "Value"], digits = 4)` and `r signif(summary(fit_lme[[best2ModelNum]])$tTable["days", "Value"], digits = 4)`), we did not use the model averaging.
+
+
+```{r timeVsDist, include = FALSE}
+TvsD_data <- read.table('DistVsTime.csv', sep=",", header=T)
+carcass_data <- subset(TvsD_data, TargetType == "carcass")
+dummy_data  <- subset(TvsD_data, TargetType == "dummy")
+plot(carcass_data$DaysSinceRelease, carcass_data$CumDistTraveled)
+points(dummy_data$DaysSinceRelease, dummy_data$CumDistTraveled,
+       pch = "x")
+# some never moved... so I'm going to get rid of those:
+distCutoff <- 20
+dummy_data <- dummy_data[dummy_data$CumDistTraveled>distCutoff,]
+carcass_data <- carcass_data[carcass_data$CumDistTraveled>distCutoff,]
+plot(carcass_data$DaysSinceRelease, 
+     carcass_data$CumDistTraveled,
+     main = paste('Cumulative distance >', distCutoff))
+points(dummy_data$DaysSinceRelease, 
+       dummy_data$CumDistTraveled,
+       pch = "x")
+
+
+lm_dummy <- lme(CumDistTraveled ~ DaysSinceRelease,
+                random = ~ 1 + DaysSinceRelease|TargetID, 
+                data = dummy_data,
+                control = lmeControl(maxIter = 1000, 
+                                     msMaxIter = 5000,
+                                     niterEM = 5000),
+                method = "ML")
+
+lm_carcass <- lme(CumDistTraveled ~ DaysSinceRelease,
+                random = ~ 1 + DaysSinceRelease|TargetID, 
+                data = carcass_data,
+                control = lmeControl(maxIter = 1000, 
+                                     msMaxIter = 5000,
+                                     niterEM = 5000),
+                method = "ML")
+
+plot_TvsD <- ggplot() + 
+  geom_point(aes(x = DaysSinceRelease, 
+                 y = CumDistTraveled), 
+             data=dummy_data,
+             shape = 'o',
+             size = 6) + 
+  geom_point(aes(x = DaysSinceRelease, 
+                 y = CumDistTraveled), 
+             data=carcass_data,
+             shape = 'x',
+             size = 6) + 
+  xlab('Days since release') + 
+  ylab('Cumualtive distance traveled (km)')
+
+#TvsD_plot
+figCount <- incCount(figCount, "figure_plot_TvsD")
+
+text_plot_TvsD <- "Relationships between time since release and cumulative distance traveled for dummies and carcass."
+
+```
+
+#Results
+The random effects linear regression models indicated that the average slopes for the dummies (`r signif(lm_dummy$coefficients$fixed[[2]], digits = 4)` +/-  `r signif(2 * sqrt(lm_dummy$varFix[2,2]), digits=4)`) and the carcasses (`r signif(lm_carcass$coefficients$fixed[[2]], digits=4)` +/-  `r signif(2 * sqrt(lm_carcass$varFix[2,2]), digits=4)`) were not statistically different at alpha = 0.05. The intercepts also were not statistically different between the two groups (dummy: `r signif(lm_dummy$coefficients$fixed[[1]], digits=4)` +/-  `r signif(2 * sqrt(lm_dummy$varFix[1,1]), digits=2)`, carcass: `r signif(lm_carcass$coefficients$fixed[[2]], digits=4)` +/-  `r signif(2 * sqrt(lm_carcass$varFix[1,1]), digits=4)`). Further, the best linear models using various predictors did not include the target type (dummy vs. carcass) when using total distance moved or ATOS as the response variable (Table x). The models with target type (`r rownames(AIC.ordered)[2]` with deltaAIC = `r signif(AIC.ordered[2,"delta"], digits=4)` for distance and `r signif(AIC.ordered_ATOS[2,"delta"], digits=4)` for ATOS; Tables `r labelNumber(tableCount, "table_AIC")` and `r labelNumber(tableCount, "table_AIC_ATOS")`) indicated that it was not statistically signficant (Distance: p = `r signif(summary(fit_lme[[3]])$tTable['typedummy', 'p-value'], digits = 4)`, ATOS: p = `r signif(summary(fit_lme_ATOS[[3]])$tTable['typedummy', 'p-value'], digits = 4)`). Comibined together, we concluded that there was no difference in the drifting patterns of carcasses and dummies. 
+
+To consider non-linear relationships between the predictors and distance moved, a generalized additive model also was fitted to the data. For this approach, `r bestModel` was fitted to carcasses and dummies, where cubic regression spline was used as the basis function. Relationshis could be approximated by linear functions because of wide uncertainty and small estimated degrees of freedom (< `r ceiling(max(summary(fit1_gam$gam)$s.table[,"edf"]))`; Figure `r labelNumber(figCount, "figure_plotGam")`). 
+
+```{r plotGamFunctions}
+multiplot(plotlist = plotAll_GAM, cols = 2)
+```
+
+\noindent `r pasteLabel(preText = "Figure", inObj = figCount, objName = "figure_plotGam", postText = text_plotGam)`
+
+Similar results were found for ATOS. We fitted `r bestModel_ATOS` to carcasses and dummies, where cubic regression spline was used as the basis function. Relationshis could be approximated by linear functions because of wide uncertainty and small estimated degrees of freedom (< `r ceiling(max(summary(fit1_gam_ATOS$gam)$s.table[,"edf"]))`; Figure `r labelNumber(figCount, "figure_plotGam_ATOS")`). Consequently, we use linear models.
+
+
+```{r plotGamFunctions_ATOS}
+multiplot(plotlist = plotAll_GAM_ATOS, cols = 2)
+```
+
+\noindent `r pasteLabel(preText = "Figure", inObj = figCount, objName = "figure_plotGam_ATOS", postText = text_plotGam_ATOS)`
+
+
+```{r plotTimeVsDistance}
+plot_TvsD
+```
+\noindent `r pasteLabel(preText = "Figure", inObj = figCount, objName = "figure_plot_TvsD", postText = text_plot_TvsD)`
+
+
+Among the linear models using the total distance moved as the response variable, `r bestModel` had the smallest AIC value (Table `r labelNumber(tableCount, "table_AIC")`).  
+
+\noindent `r pasteLabel(preText = "Table", inObj = tableCount, objName = "table_AIC", postText = text_table_AIC)`
+`r kable(AIC.ordered, digits = 2)`
+
+
+\noindent `r pasteLabel(preText = "Table", inObj = tableCount, objName = "table_coefBestModel", postText = text_table_coefBestModel)`
+`r kable(coefTable, digits = 2)`
+
+
+When using ATOS as the response variable, `r bestModel_ATOS` had the smallest AIC value (Table `r labelNumber(tableCount, "table_AIC_ATOS")`). Because the estimated coefficient for days from the second best model was virtually identical to that from the best model (Table `r labelNumber(tableCount, "table_coefBestModel_ATOS")`; days: `r signif(summary(fit_lme_ATOS[[bestModelNum_ATOS]])$tTable["days", "Value"], digits = 4)` and `r signif(summary(fit_lme_ATOS[[best2ModelNum_ATOS]])$tTable["days", "Value"], digits = 4)`), we did not use the model averaging. 
+
+\noindent `r pasteLabel(preText = "Table", inObj = tableCount, objName = "table_AIC_ATOS", postText = text_table_AIC_ATOS)`
+`r kable(AIC.ordered_ATOS, digits = 2)`
+
+Drifting distances were positively affected by time. Cosine and sine functions of the cumulative wind directions were not statistically significant (Table `r labelNumber(tableCount, "table_coefBestModel_ATOS")`).   
+
+\noindent `r pasteLabel(preText = "Table", inObj = tableCount, objName = "table_coefBestModel_ATOS", postText = text_table_coefBestModel_ATOS)`
+`r kable(coefTable_ATOS, digits = 2)`
+

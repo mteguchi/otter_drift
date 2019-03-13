@@ -27,8 +27,8 @@ rm(list=ls())
 runDate <- Sys.Date()
 sysInfo <- Sys.info()
 ifelse(sysInfo[1] == 'Linux',
-       source('~/Documents/R/TomosFunctions.R'),
-       source('~/R/TomosFunctions.R'))
+       source('~/Documents/R/tools/TomosFunctions.R'),
+       source('~/R/tools/TomosFunctions.R'))
 
 datafile <- 'Data_06Aug2015.csv'
 

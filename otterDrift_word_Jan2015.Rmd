@@ -31,7 +31,7 @@ ifelse(sysInfo[1] == 'Linux',
        source('~/Documents/R/tools/TomosFunctions.R'),
        source('~/R/tools/TomosFunctions.R'))
 
-datafile <- 'Data_11Aug2015b.csv'
+datafile <- 'data/Data_11Aug2015b.csv'
 #datafile <- 'Data_06Aug2015.csv'
 
 # the following two are used to count figure and table #s 
@@ -84,17 +84,17 @@ We also fitted  generalized additive models with a cubic regression spline as th
 
 ```{r linearModels}
 model_lme <- vector(mode = "list", length = 7)
-model_lme[[1]] <- as.formula('dist ~ type * days + wind.spd.sum + cos + sin + month')
-model_lme[[2]] <- as.formula('dist ~ type * days + cos + sin + month')
-model_lme[[3]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month')
-model_lme[[4]] <- as.formula('dist ~ type + days + cos + sin + month')
-model_lme[[5]] <- as.formula('dist ~ days + cos + sin + month')
-model_lme[[6]] <- as.formula('dist ~ wind.spd.sum + cos + sin + month')
-model_lme[[7]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month')
-model_lme[[8]] <- as.formula('dist ~ type + days')
-model_lme[[9]] <- as.formula('dist ~ type + days + wind.spd.sum')
-model_lme[[10]] <- as.formula('dist ~ wind.spd.sum + days')
-model_lme[[11]] <- as.formula('dist ~ wind.spd.sum + days + month')
+model_lme[[1]] <- as.formula('dist ~ type * days + wind.spd.sum + cos + sin + month -1')
+model_lme[[2]] <- as.formula('dist ~ type * days + cos + sin + month -1')
+model_lme[[3]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month -1')
+model_lme[[4]] <- as.formula('dist ~ type + days + cos + sin + month -1')
+model_lme[[5]] <- as.formula('dist ~ days + cos + sin + month -1')
+model_lme[[6]] <- as.formula('dist ~ wind.spd.sum + cos + sin + month -1')
+model_lme[[7]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month -1')
+model_lme[[8]] <- as.formula('dist ~ type + days -1')
+model_lme[[9]] <- as.formula('dist ~ type + days + wind.spd.sum -1')
+model_lme[[10]] <- as.formula('dist ~ wind.spd.sum + days -1')
+model_lme[[11]] <- as.formula('dist ~ wind.spd.sum + days + month -1')
 
 fit_lme <- lapply(model_lme, 
                   function(x) lme(x,
@@ -145,14 +145,14 @@ fit1_gam <- gamm4(dist ~ s(days, bs = "cr", k = 5) +
                     s(wind.spd.sum, bs = "cr", k = 5) + 
                     s(cos, bs = "cr", k = 5) + 
                     s(sin, bs = "cr", k = 5) + 
-                    s(month),
+                    month,
                   random = ~(1 + days|ID),
                   data = dat3_df,
                   family = gaussian)
 
 fit2_gam <- gamm4(dist ~ s(days, bs = "cr", k = 5) +
                     s(wind.spd.sum, bs = "cr", k = 5) +
-                    s(month, bs = "cr", k = 5),
+                    month,
                   random = ~(1 + days|ID),
                   data = dat3_df,
                   family = gaussian)
@@ -250,7 +250,7 @@ fit1_gam_ATOS <- gamm4(ATOS ~ s(days, bs = "cr", k = 5) +
                          s(wind.spd.sum, bs = "cr", k = 5) + 
                          s(cos, bs = "cr", k = 5) + 
                          s(sin, bs = "cr", k = 5) + 
-                         s(month, bs = "cr", k = 5),
+                         month,
                        random = ~(1 + days|ID),
                        data = dat3_df,
                        family = gaussian)
@@ -298,7 +298,7 @@ Because the estimated coefficient for days from the second best model was virtua
 
 
 ```{r timeVsDist, include = FALSE}
-TvsD_data <- read.table('DistVsTime.csv', sep=",", header=T)
+TvsD_data <- read.table('data/DistVsTime.csv', sep=",", header=T)
 carcass_data <- subset(TvsD_data, TargetType == "carcass")
 dummy_data  <- subset(TvsD_data, TargetType == "dummy")
 plot(carcass_data$DaysSinceRelease, carcass_data$CumDistTraveled)

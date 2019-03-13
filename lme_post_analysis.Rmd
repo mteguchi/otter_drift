@@ -1,0 +1,162 @@
+---
+title: "lme analysis"
+output: html_notebook
+---
+
+This document summarizes post-analysis of figuring out what happened in GLMM analysis for the otter drift paper.
+
+Results were saved in an RDS file on 2019-03-13 after running otterDrift_word_Jan2015.Rmd.  This analysis was redone because of reviewers quesioning the use of "month" as a numeric variable, which is a legitimate question. So, I changed the variable to a categorical variable.  
+
+```{r}
+rm(list = ls())
+library(tidyverse)
+library(nlme)
+
+lme.out <- readRDS(file = "RData/results_lme_2019-03-13.rds")
+lme.dist <- lme.out$dist
+lme.ATOS <- lme.out$ATOS
+dat <- lme.out$data
+```
+
+First, look at the coefficients of the best model.
+
+```{r}
+AICs <- unlist(lapply(lme.dist, 
+              FUN = function(x) AIC(x)))
+
+dAIC <- AICs - min(AICs)
+lme.dist[AICs == min(AICs)]
+```
+
+Look at the relationship between days and distance by ID
+```{r}
+ggplot(data = dat) +
+  geom_point(aes(x = days, y = dist, color = ID)) +
+  theme(legend.position = "none")
+
+```
+
+Thinking more... having intercepts is probably unnecessary because every target starts at 0 distance and increases, or not change.  But the results don't change much so ignore this for now... 
+
+```{r}
+model_lme <- vector(mode = "list", length = 7)
+model_lme[[1]] <- as.formula('dist ~ type * days + wind.spd.sum + cos + sin + month -1')
+model_lme[[2]] <- as.formula('dist ~ type * days + cos + sin + month -1')
+model_lme[[3]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month -1')
+model_lme[[4]] <- as.formula('dist ~ type + days + cos + sin + month -1')
+model_lme[[5]] <- as.formula('dist ~ days + cos + sin + month -1')
+model_lme[[6]] <- as.formula('dist ~ wind.spd.sum + cos + sin + month -1')
+model_lme[[7]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month -1')
+model_lme[[8]] <- as.formula('dist ~ type + days -1')
+model_lme[[9]] <- as.formula('dist ~ type + days + wind.spd.sum -1')
+model_lme[[10]] <- as.formula('dist ~ wind.spd.sum + days -1')
+model_lme[[11]] <- as.formula('dist ~ wind.spd.sum + days + month -1')
+
+fit_lme <- lapply(model_lme, 
+                  function(x) lme(x,
+                                  random = ~ -1 + days|ID, 
+                                  data = dat,
+                                  control = lmeControl(maxIter = 1000, 
+                                                       msMaxIter = 5000,
+                                                       niterEM = 5000),
+                                  method = "ML"))
+
+varnames <- unlist(lapply(model_lme, 
+                          FUN = function(x) strsplit(as.character(x), split = '~')[3]))
+
+AIC_df <- data.frame(AIC = unlist(lapply(fit_lme, 
+                                         FUN = function(x) AIC(x))),
+                     model = varnames) 
+AIC_df$delta <- AIC_df$AIC - min(AIC_df$AIC)
+rownames(AIC_df) <- paste("Model", 1:length(model_lme)) 
+#model.lkhd <- exp(-0.5 * AIC_df$delta)
+#AIC_df$weight <- model.lkhd/(sum(model.lkhd))
+
+AIC.ordered <- AIC_df[order(AIC_df$delta), 
+                      colnames(AIC_df) != "AIC"]
+
+```
+
+
+Back to the original issue of the effects of month on distance traveled, where all coefficients are negative except for February
+```{r}
+coef(fit_lme[[11]])
+```
+
+Let's take a look at how many individual targets were found within each month.
+
+```{r}
+dat %>% group_by(month) %>% summarise(count = n_distinct(ID))
+
+```
+
+Unequal sample sizes for sure... the negative coefficients come from the decreasing distances within a month.  Is there a correlation between month and cumulative wind speed?  So, take a look at how distances changes within a month per ID - just the means:
+
+```{r}
+dat %>% group_by(month, ID) %>% summarise(mean.dist = mean(dist), n = n()) -> tmp
+
+ggplot(data = tmp) +
+  geom_point(aes(x = month, y = mean.dist, color = ID),
+             size = 2) +
+  theme(legend.position = "none")
+```
+
+The raw data show that winter has large values whereas summer has less - except January. 
+
+```{r}
+ggplot(data = dat) +
+  geom_point(aes(x = month, y = dist, color = ID),
+             size = 2) + 
+  theme(legend.position = "none")
+```
+
+Take a look at monthly sample sizes
+```{r}
+dat %>% group_by(month) %>% summarize(n.data = n(), 
+                                      n.ID = n_distinct(ID),
+                                      mean.dist = mean(dist))
+```
+
+I don't know why those coefficients are negative... 
+
+```{r}
+
+M11 <- as.formula('dist ~ wind.spd.sum + days + month')
+fit <- lme(M11,
+           random = ~ 1 + days|ID, 
+           data = dat,
+           control = lmeControl(maxIter = 1000, 
+                                msMaxIter = 5000,
+                                niterEM = 5000),
+           method = "ML")
+
+summary(fit)
+```
+
+Take a look at coefficients:
+
+```{r}
+coefs <- coef(fit)
+```
+
+These coefficients can be used as follows to create predicted values:
+
+```{r}
+# get the data for c-05
+tmp <- filter(dat, ID == "c-05")
+
+# create design matrix. Need to look at tmp to figure out "month" part of zeros and ones. Note 
+# there is no month1, which is in intercept.
+X05 <- cbind(1, tmp$wind.spd.sum, tmp$days, c(0,0,1,1,1,1,1,0),c(0,0,0,0,0,0,0,1),0,0,0,0,0,0,0,0)
+
+# when multiply this with the coefficients, you get the regression line for the individual:
+X05%*%t(coefs[4,])
+
+# Here are the observed values
+tmp$dist
+
+# these should be able to be plotted - a line per individual... 
+# Let's do that soon. 
+
+```
+

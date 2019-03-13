@@ -84,17 +84,17 @@ We also fitted  generalized additive models with a cubic regression spline as th
 
 ```{r linearModels}
 model_lme <- vector(mode = "list", length = 7)
-model_lme[[1]] <- as.formula('dist ~ type * days + wind.spd.sum + cos + sin + month -1')
-model_lme[[2]] <- as.formula('dist ~ type * days + cos + sin + month -1')
-model_lme[[3]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month -1')
-model_lme[[4]] <- as.formula('dist ~ type + days + cos + sin + month -1')
-model_lme[[5]] <- as.formula('dist ~ days + cos + sin + month -1')
-model_lme[[6]] <- as.formula('dist ~ wind.spd.sum + cos + sin + month -1')
-model_lme[[7]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month -1')
-model_lme[[8]] <- as.formula('dist ~ type + days -1')
-model_lme[[9]] <- as.formula('dist ~ type + days + wind.spd.sum -1')
-model_lme[[10]] <- as.formula('dist ~ wind.spd.sum + days -1')
-model_lme[[11]] <- as.formula('dist ~ wind.spd.sum + days + month -1')
+model_lme[[1]] <- as.formula('dist ~ type * days + wind.spd.sum + cos + sin + month ')
+model_lme[[2]] <- as.formula('dist ~ type * days + cos + sin + month')
+model_lme[[3]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month')
+model_lme[[4]] <- as.formula('dist ~ type + days + cos + sin + month')
+model_lme[[5]] <- as.formula('dist ~ days + cos + sin + month')
+model_lme[[6]] <- as.formula('dist ~ wind.spd.sum + cos + sin + month')
+model_lme[[7]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month')
+model_lme[[8]] <- as.formula('dist ~ type + days')
+model_lme[[9]] <- as.formula('dist ~ type + days + wind.spd.sum')
+model_lme[[10]] <- as.formula('dist ~ wind.spd.sum + days')
+model_lme[[11]] <- as.formula('dist ~ wind.spd.sum + days + month')
 
 fit_lme <- lapply(model_lme, 
                   function(x) lme(x,
@@ -221,7 +221,8 @@ varnames_ATOS <- unlist(lapply(model_lme_ATOS,
 
 AIC_df_ATOS <- data.frame(AIC = unlist(lapply(fit_lme_ATOS, 
                                          FUN = function(x) AIC(x))),
-                     model = varnames_ATOS) 
+                          model = varnames_ATOS) 
+
 AIC_df_ATOS$delta <- AIC_df_ATOS$AIC - min(AIC_df_ATOS$AIC)
 rownames(AIC_df_ATOS) <- paste("Model", 1:length(model_lme_ATOS)) 
 model.lkhd_ATOS <- exp(-0.5 * AIC_df_ATOS$delta)

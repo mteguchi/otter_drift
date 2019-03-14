@@ -142,18 +142,37 @@ coefs <- coef(fit)
 These coefficients can be used as follows to create predicted values:
 
 ```{r}
-# get the data for c-05
-tmp <- filter(dat, ID == "c-05")
+IDs <- rownames(coefs)
+k <- 1
+out.list <- vector(mode = "list", length = length(IDs))
+for (k in 1:length(IDs)){
+  # get the data for each indiv
+  tmp <- filter(dat, ID == IDs[k])
+  # create design matrix. Need to look at tmp to figure out "month" part of zeros and ones. Note 
+  # there is no month1, which is in intercept.
+  X.month <- matrix(data = 0, nrow = nrow(tmp), ncol = 11)
+  tmp.month <- cbind(seq(1, nrow(tmp)), tmp$month)
+  X.month[tmp.month] <- 1
+  
+  design.X <- cbind(1, tmp$wind.spd.sum, 
+                    tmp$days, X.month[, 2:11])
+  
+  # when multiply this with the coefficients, I get the regression line for the individual:
+  y.hat <- design.X %*% t(coefs[k,])
+  out.list[[k]] <- data.frame(ID = IDs[k],
+                              days = tmp$days,
+                              y = tmp$dist,
+                              yhat = as.vector(y.hat))
+}
 
-# create design matrix. Need to look at tmp to figure out "month" part of zeros and ones. Note 
-# there is no month1, which is in intercept.
-X05 <- cbind(1, tmp$wind.spd.sum, tmp$days, c(0,0,1,1,1,1,1,0),c(0,0,0,0,0,0,0,1),0,0,0,0,0,0,0,0)
+out.df <- do.call(rbind, out.list)
 
-# when multiply this with the coefficients, you get the regression line for the individual:
-X05%*%t(coefs[4,])
-
+ggplot(data = out.df) + 
+  geom_point(aes(x = days, y = y, color = ID)) + 
+  geom_path(aes(x = days, y = yhat, color = ID)) + 
+  theme(legend.position = "none")
 # Here are the observed values
-tmp$dist
+#tmp$dist
 
 # these should be able to be plotted - a line per individual... 
 # Let's do that soon. 

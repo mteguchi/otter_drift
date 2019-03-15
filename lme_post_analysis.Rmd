@@ -12,7 +12,7 @@ rm(list = ls())
 library(tidyverse)
 library(nlme)
 
-lme.out <- readRDS(file = "RData/results_lme_2019-03-13.rds")
+lme.out <- readRDS(file = "RData/results_lme_2019-03-14.rds")
 lme.dist <- lme.out$dist
 lme.ATOS <- lme.out$ATOS
 dat <- lme.out$data
@@ -137,6 +137,7 @@ Take a look at coefficients:
 
 ```{r}
 coefs <- coef(fit)
+coefs
 ```
 
 These coefficients can be used as follows to create predicted values:

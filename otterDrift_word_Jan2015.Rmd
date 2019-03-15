@@ -20,11 +20,14 @@ knitr::opts_chunk$set(fig.path='figures/', echo = FALSE, message = FALSE)
 ```
 
 ```{r getStarted, include = FALSE}
+rm(list=ls())
+
 library(nlme)
 library(gamm4)
 library(knitr)
 library(ggplot2)
-rm(list=ls())
+library(tidyverse)
+
 runDate <- Sys.Date()
 sysInfo <- Sys.info()
 ifelse(sysInfo[1] == 'Linux',
@@ -44,6 +47,7 @@ tableCount <- c(`_` = 0)
 dat <- na.omit(read.table(file = datafile, sep=",", header = TRUE))
 #windDat <- read.table(file = windfile, sep = ",", header = TRUE)
 
+#month is the date of release:
 month <- vector(mode = "numeric", length = dim(dat)[1])
 dat_Y <- vector(mode = "numeric", length = dim(dat)[1])
 for (k in 1:dim(dat)[1]){
@@ -56,21 +60,41 @@ dat$dat_Y <- dat_Y - min(dat_Y)
 
 dat$fMonth <- as.factor(dat$month)
 
-dat3_mat <- dat[,c("windSpd", "windSpdSum")]
-#dat3_mat_std <- scale(dat3_mat)
-dat3_df <- as.data.frame(cbind(dat3_mat, 
-                               windDir = dat$windDir/360, 
-                               windDirSum = dat$windDirSum/360,
-                               cos = dat$cosTh,
-                               sin = dat$sinTh,
-                               dat[, c("DaysSinceRelease", "Type", 
-                                       "distInKm", "dat_Y", "ID", 
-                                       "ATOS", "fMonth")]))
+dat %>% group_by(ID) %>%
+  mutate(release_date = first(Date)) %>%
+  mutate(release_month = lubridate::month(lubridate::mdy(release_date))) %>%
+  mutate(wind.spd = windSpd,
+         wind.spd.sum = windSpdSum,
+         wind.dir = windDir/360, 
+         wind.dir.sum = windDirSum/360,
+         cos = cosTh,
+         sin = sinTh,
+         days = DaysSinceRelease,
+         type = Type,
+         dist = distInKm,
+         year = dat_Y,
+         month.n = release_month) %>%
+  select(wind.spd, wind.spd.sum, wind.dir, wind.dir.sum,
+         cos, sin, days, type, dist, year, ID, ATOS, month.n) -> dat3_df
 
-colnames(dat3_df) <- c("wind.spd", "wind.spd.sum",
-                       "wind.dir", "wind.dir.sum",
-                       "cos", "sin", "days", "type",
-                       "dist", "year", "ID", "ATOS", "month")
+#dat3_df$month <- as.factor(dat3_df$month.n)
+dat3_df$month <- dat3_df$month.n
+
+# dat3_mat <- dat[,c("windSpd", "windSpdSum")]
+# #dat3_mat_std <- scale(dat3_mat)
+# dat3_df <- as.data.frame(cbind(dat3_mat, 
+#                                windDir = dat$windDir/360, 
+#                                windDirSum = dat$windDirSum/360,
+#                                cos = dat$cosTh,
+#                                sin = dat$sinTh,
+#                                dat[, c("DaysSinceRelease", "Type", 
+#                                        "distInKm", "dat_Y", "ID", 
+#                                        "ATOS", "fMonth")]))
+# 
+# colnames(dat3_df) <- c("wind.spd", "wind.spd.sum",
+#                        "wind.dir", "wind.dir.sum",
+#                        "cos", "sin", "days", "type",
+#                        "dist", "year", "ID", "ATOS", "month")
 ```
 
 #Methods
@@ -137,22 +161,23 @@ coefTable <- coefTable[, (colnames(coefTable) != "DF" &
                             colnames(coefTable) != "t-value")]
 
 tableCount <- incCount(tableCount, "table_coefBestModel")
-text_table_coefBestModel <- "Estiamted coefficients of the best model."
+text_table_coefBestModel <- "Estimated coefficients of the best model."
 ```
 
 ```{r gamModel, include=FALSE}
+# when month is a categorical, don't use smooth on month
 fit1_gam <- gamm4(dist ~ s(days, bs = "cr", k = 5) + 
                     s(wind.spd.sum, bs = "cr", k = 5) + 
                     s(cos, bs = "cr", k = 5) + 
                     s(sin, bs = "cr", k = 5) + 
-                    month,
+                    s(month, bs = "cr", k = 5),
                   random = ~(1 + days|ID),
                   data = dat3_df,
                   family = gaussian)
 
 fit2_gam <- gamm4(dist ~ s(days, bs = "cr", k = 5) +
                     s(wind.spd.sum, bs = "cr", k = 5) +
-                    month,
+                    s(month, bs = "cr", k = 5),
                   random = ~(1 + days|ID),
                   data = dat3_df,
                   family = gaussian)
@@ -289,6 +314,10 @@ plotAll_GAM_ATOS <- lapply(plot_gam_ATOS,
                           geom_rug(data=df_rug, aes(x=v1)) + 
                           theme_minimal()} )
 
+lme.out <- list(dist = fit_lme,
+                ATPS = fit_lme_ATOS,
+                data = dat3_df)
+saveRDS(lme.out, file = "RData/results_lme_2019-03-14.rds")
 
 figCount <- incCount(figCount, "figure_plotGam_ATOS")
 

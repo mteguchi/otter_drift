@@ -27,6 +27,7 @@ library(gamm4)
 library(knitr)
 library(ggplot2)
 library(tidyverse)
+library(AICcmodavg)
 
 runDate <- Sys.Date()
 sysInfo <- Sys.info()
@@ -74,11 +75,14 @@ dat %>% group_by(ID) %>%
          dist = distInKm,
          year = dat_Y,
          month.n = release_month) %>%
-  select(wind.spd, wind.spd.sum, wind.dir, wind.dir.sum,
-         cos, sin, days, type, dist, year, ID, ATOS, month.n) -> dat3_df
+  select(wind.spd, wind.spd.sum, 
+         wind.dir, wind.dir.sum,
+         cos, sin, days, type, 
+         dist, year, ID, ATOS, month.n) -> dat3_df
 
 #dat3_df$month <- as.factor(dat3_df$month.n)
 dat3_df$month <- dat3_df$month.n
+dat3_df$month2 <- dat3_df$month.n * dat3_df$month.n
 
 # dat3_mat <- dat[,c("windSpd", "windSpdSum")]
 # #dat3_mat_std <- scale(dat3_mat)
@@ -106,19 +110,52 @@ We also used ATOS as a response variable.
 
 We also fitted  generalized additive models with a cubic regression spline as the basis function to the data to determine if non-linear models were more appropriate than linear models. All analyses were conducted using the R statistical environment (V. 3.2.1; R Core Team 2015) with packages nlme (Pinheiro et al. 2015) and gamm4 (Wood and Scheipl 2014). 
 
-```{r linearModels}
-model_lme <- vector(mode = "list", length = 7)
-model_lme[[1]] <- as.formula('dist ~ type * days + wind.spd.sum + cos + sin + month ')
-model_lme[[2]] <- as.formula('dist ~ type * days + cos + sin + month')
-model_lme[[3]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month')
-model_lme[[4]] <- as.formula('dist ~ type + days + cos + sin + month')
-model_lme[[5]] <- as.formula('dist ~ days + cos + sin + month')
-model_lme[[6]] <- as.formula('dist ~ wind.spd.sum + cos + sin + month')
-model_lme[[7]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month')
+```{r linearModels, cache=T}
+model_lme <- vector(mode = "list", length = 11)
+model_lme[[1]] <- as.formula('dist ~ type * days + wind.spd.sum + cos + sin + month + month2')
+model_lme[[2]] <- as.formula('dist ~ type * days + cos + sin + month + month2')
+model_lme[[3]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month + month2')
+model_lme[[4]] <- as.formula('dist ~ type + days + cos + sin + month + month2')
+model_lme[[5]] <- as.formula('dist ~ days + cos + sin + month + month2')
+model_lme[[6]] <- as.formula('dist ~ wind.spd.sum + cos + sin + month + month2')
+model_lme[[7]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month + month2')
 model_lme[[8]] <- as.formula('dist ~ type + days')
 model_lme[[9]] <- as.formula('dist ~ type + days + wind.spd.sum')
 model_lme[[10]] <- as.formula('dist ~ wind.spd.sum + days')
-model_lme[[11]] <- as.formula('dist ~ wind.spd.sum + days + month')
+model_lme[[11]] <- as.formula('dist ~ wind.spd.sum + days + month + month2')
+
+# model_lme[[1]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month + month2')
+# model_lme[[2]] <- as.formula('dist ~ type + days + cos + sin + month + month2')
+# model_lme[[3]] <- as.formula('dist ~ type + wind.spd.sum + cos + sin + month + month2')
+# model_lme[[4]] <- as.formula('dist ~ type + wind.spd.sum + month+ month2')
+# model_lme[[5]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month + month2')
+# model_lme[[6]] <- as.formula('dist ~ type + cos + sin + month + month2')
+# model_lme[[7]] <- as.formula('dist ~ days + wind.spd.sum + month + month2')
+# model_lme[[8]] <- as.formula('dist ~ wind.spd.sum + month + month2')
+# model_lme[[9]] <- as.formula('dist ~ days + month + month2')
+# model_lme[[10]] <- as.formula('dist ~ type + month + month2')
+# 
+# model_lme[[11]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin + month')
+# model_lme[[12]] <- as.formula('dist ~ type + days + cos + sin + month')
+# model_lme[[13]] <- as.formula('dist ~ type + wind.spd.sum + cos + sin + month')
+# model_lme[[14]] <- as.formula('dist ~ type + wind.spd.sum + month')
+# model_lme[[15]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin + month')
+# model_lme[[16]] <- as.formula('dist ~ type + cos + sin + month')
+# model_lme[[17]] <- as.formula('dist ~ days + wind.spd.sum + month')
+# model_lme[[18]] <- as.formula('dist ~ wind.spd.sum + month')
+# model_lme[[19]] <- as.formula('dist ~ days + month')
+# model_lme[[20]] <- as.formula('dist ~ type + month')
+# 
+# model_lme[[21]] <- as.formula('dist ~ type + days + wind.spd.sum + cos + sin')
+# model_lme[[22]] <- as.formula('dist ~ type + days + cos + sin')
+# model_lme[[23]] <- as.formula('dist ~ type + wind.spd.sum + cos + sin')
+# model_lme[[24]] <- as.formula('dist ~ type + wind.spd.sum')
+# model_lme[[25]] <- as.formula('dist ~ days + wind.spd.sum + cos + sin')
+# model_lme[[26]] <- as.formula('dist ~ type + cos + sin')
+# model_lme[[27]] <- as.formula('dist ~ days + wind.spd.sum')
+# model_lme[[28]] <- as.formula('dist ~ wind.spd.sum')
+# model_lme[[29]] <- as.formula('dist ~ days')
+# model_lme[[30]] <- as.formula('dist ~ type')
 
 fit_lme <- lapply(model_lme, 
                   function(x) lme(x,
@@ -131,11 +168,17 @@ fit_lme <- lapply(model_lme,
 
 #summary(fit_lme3)
 varnames <- unlist(lapply(model_lme, 
-                          FUN = function(x) strsplit(as.character(x), split = '~')[3]))
+                          FUN = function(x) strsplit(as.character(x), 
+                                                     split = '~')[3]))
 
 AIC_df <- data.frame(AIC = unlist(lapply(fit_lme, 
                                          FUN = function(x) AIC(x))),
                      model = varnames) 
+
+AICc_df <- data.frame(AIC = unlist(lapply(fit_lme, 
+                                         FUN = function(x) AICc(x))),
+                     model = varnames) 
+
 AIC_df$delta <- AIC_df$AIC - min(AIC_df$AIC)
 rownames(AIC_df) <- paste("Model", 1:length(model_lme)) 
 model.lkhd <- exp(-0.5 * AIC_df$delta)
@@ -143,6 +186,12 @@ model.lkhd <- exp(-0.5 * AIC_df$delta)
 
 AIC.ordered <- AIC_df[order(AIC_df$delta), 
                       colnames(AIC_df) != "AIC"]
+
+AICc_df$delta <- AICc_df$AIC - min(AICc_df$AIC)
+rownames(AICc_df) <- paste("Model", 1:length(model_lme)) 
+AICc.ordered <- AICc_df[order(AICc_df$delta), 
+                      colnames(AICc_df) != "AIC"]
+
 tableCount <- incCount(tableCount, "table_AIC")
 text_table_AIC <- "A comparison of linear models fitted to drift data of sea otter carcasses and dummies. delta is difference in AIC values and Weight is Akaike weight (Burnham and Anderson 2010)."
 
@@ -164,7 +213,7 @@ tableCount <- incCount(tableCount, "table_coefBestModel")
 text_table_coefBestModel <- "Estimated coefficients of the best model."
 ```
 
-```{r gamModel, include=FALSE}
+```{r gamModel, include=FALSE, cache=T}
 # when month is a categorical, don't use smooth on month
 fit1_gam <- gamm4(dist ~ s(days, bs = "cr", k = 5) + 
                     s(wind.spd.sum, bs = "cr", k = 5) + 
@@ -217,19 +266,52 @@ text_plotGam <- "The GAM smooth functions for days since release and cumulative 
 ```
 
 
-```{r ATOS_linearModels}
-model_lme_ATOS <- vector(mode = "list", length = 7)
-model_lme_ATOS[[1]] <- as.formula('ATOS ~ type * days + wind.spd.sum + cos + sin + month')
-model_lme_ATOS[[2]] <- as.formula('ATOS ~ type * days + cos + sin + month')
-model_lme_ATOS[[3]] <- as.formula('ATOS ~ type + days + wind.spd.sum + cos + sin + month')
-model_lme_ATOS[[4]] <- as.formula('ATOS ~ type + days + cos + sin + month')
-model_lme_ATOS[[5]] <- as.formula('ATOS ~ days + cos + sin + month')
-model_lme_ATOS[[6]] <- as.formula('ATOS ~ wind.spd.sum + cos + sin + month')
-model_lme_ATOS[[7]] <- as.formula('ATOS ~ days + wind.spd.sum + cos + sin + month')
+```{r ATOS_linearModels, cache=T}
+model_lme_ATOS <- vector(mode = "list", length = 11)
+# model_lme_ATOS[[1]] <- as.formula('ATOS ~ type + days + wind.spd.sum + cos + sin + month + month2')
+# model_lme_ATOS[[2]] <- as.formula('ATOS ~ type + days + cos + sin + month + month2')
+# model_lme_ATOS[[3]] <- as.formula('ATOS ~ type + wind.spd.sum + cos + sin + month + month2')
+# model_lme_ATOS[[4]] <- as.formula('ATOS ~ type + wind.spd.sum + month+ month2')
+# model_lme_ATOS[[5]] <- as.formula('ATOS ~ days + wind.spd.sum + cos + sin + month + month2')
+# model_lme_ATOS[[6]] <- as.formula('ATOS ~ type + cos + sin + month + month2')
+# model_lme_ATOS[[7]] <- as.formula('ATOS ~ days + wind.spd.sum + month + month2')
+# model_lme_ATOS[[8]] <- as.formula('ATOS ~ wind.spd.sum + month + month2')
+# model_lme_ATOS[[9]] <- as.formula('ATOS ~ days + month + month2')
+# model_lme_ATOS[[10]] <- as.formula('ATOS ~ type + month + month2')
+# 
+# model_lme_ATOS[[11]] <- as.formula('ATOS ~ type + days + wind.spd.sum + cos + sin + month')
+# model_lme_ATOS[[12]] <- as.formula('ATOS ~ type + days + cos + sin + month')
+# model_lme_ATOS[[13]] <- as.formula('ATOS ~ type + wind.spd.sum + cos + sin + month')
+# model_lme_ATOS[[14]] <- as.formula('ATOS ~ type + wind.spd.sum + month')
+# model_lme_ATOS[[15]] <- as.formula('ATOS ~ days + wind.spd.sum + cos + sin + month')
+# model_lme_ATOS[[16]] <- as.formula('ATOS ~ type + cos + sin + month')
+# model_lme_ATOS[[17]] <- as.formula('ATOS ~ days + wind.spd.sum + month')
+# model_lme_ATOS[[18]] <- as.formula('ATOS ~ wind.spd.sum + month')
+# model_lme_ATOS[[19]] <- as.formula('ATOS ~ days + month')
+# model_lme_ATOS[[20]] <- as.formula('ATOS ~ type + month')
+# 
+# model_lme_ATOS[[21]] <- as.formula('ATOS ~ type + days + wind.spd.sum + cos + sin')
+# model_lme_ATOS[[22]] <- as.formula('ATOS ~ type + days + cos + sin')
+# model_lme_ATOS[[23]] <- as.formula('ATOS ~ type + wind.spd.sum + cos + sin')
+# model_lme_ATOS[[24]] <- as.formula('ATOS ~ type + wind.spd.sum')
+# model_lme_ATOS[[25]] <- as.formula('ATOS ~ days + wind.spd.sum + cos + sin')
+# model_lme_ATOS[[26]] <- as.formula('ATOS ~ type + cos + sin')
+# model_lme_ATOS[[27]] <- as.formula('ATOS ~ days + wind.spd.sum')
+# model_lme_ATOS[[28]] <- as.formula('ATOS ~ wind.spd.sum')
+# model_lme_ATOS[[29]] <- as.formula('ATOS ~ days')
+# model_lme_ATOS[[30]] <- as.formula('ATOS ~ type')
+
+model_lme_ATOS[[1]] <- as.formula('ATOS ~ type * days + wind.spd.sum + cos + sin + month + month2')
+model_lme_ATOS[[2]] <- as.formula('ATOS ~ type * days + cos + sin + month + month2')
+model_lme_ATOS[[3]] <- as.formula('ATOS ~ type + days + wind.spd.sum + cos + sin + month + month2')
+model_lme_ATOS[[4]] <- as.formula('ATOS ~ type + days + cos + sin + month + month2')
+model_lme_ATOS[[5]] <- as.formula('ATOS ~ days + cos + sin + month + month2')
+model_lme_ATOS[[6]] <- as.formula('ATOS ~ wind.spd.sum + cos + sin + month + month2')
+model_lme_ATOS[[7]] <- as.formula('ATOS ~ days + wind.spd.sum + cos + sin + month + month2')
 model_lme_ATOS[[8]] <- as.formula('ATOS ~ type + days')
 model_lme_ATOS[[9]] <- as.formula('ATOS ~ type + days + wind.spd.sum')
 model_lme_ATOS[[10]] <- as.formula('ATOS ~ wind.spd.sum + days')
-model_lme_ATOS[[11]] <- as.formula('ATOS ~ wind.spd.sum + days + month')
+model_lme_ATOS[[11]] <- as.formula('ATOS ~ wind.spd.sum + days + month + month2')
 
 fit_lme_ATOS <- lapply(model_lme_ATOS, 
                        function(x) lme(x,
@@ -271,7 +353,7 @@ tableCount <- incCount(tableCount, "table_coefBestModel_ATOS")
 text_table_coefBestModel_ATOS <- "Estiamted coefficients of the best model."
 ```
 
-```{r ATOS_gamModel, include=FALSE}
+```{r ATOS_gamModel, include=FALSE, cache=T}
 fit1_gam_ATOS <- gamm4(ATOS ~ s(days, bs = "cr", k = 5) + 
                          s(wind.spd.sum, bs = "cr", k = 5) + 
                          s(cos, bs = "cr", k = 5) + 
@@ -317,17 +399,17 @@ plotAll_GAM_ATOS <- lapply(plot_gam_ATOS,
 lme.out <- list(dist = fit_lme,
                 ATPS = fit_lme_ATOS,
                 data = dat3_df)
-saveRDS(lme.out, file = "RData/results_lme_2019-03-14.rds")
+saveRDS(lme.out, file = "RData/results_lme_2019-03-15.rds")
 
 figCount <- incCount(figCount, "figure_plotGam_ATOS")
 
 text_plotGam_ATOS <- "The GAM smooth functions for days since release and cumulative sum of wind directions as predictors to ATOS.  Black ribbons indicate approximate 95% confidence intervals. "
 ```
 
-Because the estimated coefficient for days from the second best model was virtually identical to that from the best model (Table `r labelNumber(tableCount, "table_coefBestModel")`; days: `r signif(summary(fit_lme[[bestModelNum]])$tTable["days", "Value"], digits = 4)` and `r signif(summary(fit_lme[[best2ModelNum]])$tTable["days", "Value"], digits = 4)`), we did not use the model averaging.
+Because the estimated coefficient for days from the second best model was virtually identical to that from the best model (Table `r labelNumber(tableCount, "table_coefBestModel")`; days: `r signif(summary(fit_lme[[bestModelNum]])$tTable["days", "Value"], digits = 4)` +/- `r signif(summary(fit_lme[[bestModelNum]])$tTable["days", "Std.Error"], digits = 4)` and `r signif(summary(fit_lme[[best2ModelNum]])$tTable["days", "Value"], digits = 4)` +/- `r signif(summary(fit_lme[[best2ModelNum]])$tTable["days", "Std.Error"], digits = 4)`)), we did not use the model averaging.
 
 
-```{r timeVsDist, include = FALSE}
+```{r timeVsDist, include = FALSE, cache=T}
 TvsD_data <- read.table('data/DistVsTime.csv', sep=",", header=T)
 carcass_data <- subset(TvsD_data, TargetType == "carcass")
 dummy_data  <- subset(TvsD_data, TargetType == "dummy")

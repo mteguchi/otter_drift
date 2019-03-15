@@ -512,3 +512,42 @@ Drifting distances were positively affected by time. Cosine and sine functions o
 \noindent `r pasteLabel(preText = "Table", inObj = tableCount, objName = "table_coefBestModel_ATOS", postText = text_table_coefBestModel_ATOS)`
 `r kable(coefTable_ATOS, digits = 2)`
 
+```{r nonLinearMonth}
+b1 <- summary(fit_lme[[bestModelNum]])$tTable["month", "Value"]
+b2 <- summary(fit_lme[[bestModelNum]])$tTable["month2", "Value"]
+
+dist.hat <- b1 * seq(1, 12) + b2 * (seq(1,12))^2
+plot.df <- data.frame(month = seq(1,12),
+                      dist.hat = dist.hat)
+
+p <- ggplot(data = plot.df) + 
+  geom_line(aes(x = month, y = dist.hat))
+
+
+
+```
+
+
+```{r plotMonth_dist}
+p
+```
+
+```{r nonLinearMonthATOS}
+b1 <- summary(fit_lme_ATOS[[bestModelNum_ATOS]])$tTable["month", "Value"]
+b2 <- summary(fit_lme_ATOS[[bestModelNum_ATOS]])$tTable["month2", "Value"]
+
+dist.hat <- b1 * seq(1, 12) + b2 * (seq(1,12))^2
+plot.df <- data.frame(month = seq(1,12),
+                      dist.hat = dist.hat)
+
+p <- ggplot(data = plot.df) + 
+  geom_line(aes(x = month, y = dist.hat))
+
+
+
+```
+
+
+```{r plotMonth_ATOS}
+p
+```
